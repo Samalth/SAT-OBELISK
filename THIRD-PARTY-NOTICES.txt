@@ -1,0 +1,90 @@
+THIRD-PARTY NOTICES — SAT-Obelisk
+==================================
+
+SAT-Obelisk is distributed with the following third-party open-source
+components. Each is the property of its respective authors and is licensed
+under its own terms, which govern your use of that component. These terms are
+separate from, and prevail over, the SAT-Obelisk license (Apache-2.0) with
+respect to the components themselves.
+
+Full license texts are available at the URLs listed below; where a license is
+short (MIT/BSD), its text is reproduced here.
+
+--------------------------------------------------------------------------------
+1. Python (CPython runtime)
+   License: Python Software Foundation License (PSF) v2
+   Copyright (c) 2001-2026 Python Software Foundation. All rights reserved.
+   https://docs.python.org/3/license.html
+
+--------------------------------------------------------------------------------
+2. pyca/cryptography
+   Provides the vetted ChaCha20-Poly1305 and AES-256-GCM cipher backends.
+   License: Apache License 2.0 OR BSD-3-Clause (dual-licensed)
+   Copyright (c) The Python Cryptographic Authority and individual contributors.
+   https://github.com/pyca/cryptography/blob/main/LICENSE
+   Bundles OpenSSL — see item 6.
+
+--------------------------------------------------------------------------------
+3. argon2-cffi  and  argon2-cffi-bindings
+   Provides the Argon2id password key-derivation function.
+   License: MIT License
+   Copyright (c) 2015 Hynek Schlawack and contributors.
+   https://github.com/hynek/argon2-cffi/blob/main/LICENSE
+
+   The reference Argon2 implementation is licensed under CC0 1.0 / Apache 2.0.
+   https://github.com/P-H-C/phc-winner-argon2/blob/master/LICENSE
+
+--------------------------------------------------------------------------------
+4. cffi  and  pycparser
+   Transitive dependencies of argon2-cffi.
+   License: MIT License
+   cffi: Copyright (c) Armin Rigo, Maciej Fijalkowski.
+   pycparser: Copyright (c) 2008-2022 Eli Bendersky.
+   https://github.com/python-cffi/cffi/blob/main/LICENSE
+
+--------------------------------------------------------------------------------
+5. PyInstaller (bootloader bundled into the executable)
+   License: GPL 2.0+ WITH a bootloader exception that explicitly permits
+   distributing the bootloader as part of frozen (compiled) applications,
+   regardless of the application's own license.
+   Copyright (c) 2005-2026 PyInstaller Development Team.
+   https://github.com/pyinstaller/pyinstaller/blob/develop/COPYING.txt
+
+--------------------------------------------------------------------------------
+6. OpenSSL (statically linked via pyca/cryptography)
+   License: Apache License 2.0 (OpenSSL 3.x)
+   Copyright (c) The OpenSSL Project Authors.
+   https://www.openssl.org/source/license.html
+
+--------------------------------------------------------------------------------
+7. Inno Setup (used to build the installer)
+   License: Inno Setup License (permits free creation and distribution of
+   installers, including for commercial software).
+   Copyright (c) 1997-2026 Jordan Russell. Portions Copyright (c) 2000-2026
+   Martijn Laan.
+   https://github.com/jrsoftware/issrc/blob/main/license.txt
+
+================================================================================
+The MIT License (applies to items 3 and 4)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+================================================================================
+Note: The full texts of the Apache License 2.0 and the Python Software
+Foundation License should be reproduced in full when distributing commercially.
+They are omitted here for brevity and are available at the URLs above.

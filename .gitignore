@@ -1,0 +1,15 @@
+/DESIGN.md
+__pycache__/
+obelisk/__pycache__/
+
+*.key
+*.obl
+*.enc
+secret*
+
+build/
+dist/
+*.spec
+
+.venv/
+venv/

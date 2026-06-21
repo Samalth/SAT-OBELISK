@@ -1,0 +1,18 @@
+SAT-Obelisk
+Copyright 2026 S.A. Thiers
+
+This product is licensed under the Apache License, Version 2.0.
+See the LICENSE file for the full license text.
+
+This product bundles third-party open-source components, each under its own
+license. Those licenses govern the respective components and are listed in
+THIRD-PARTY-NOTICES.txt.
+
+---
+
+SAT-Obelisk is a research / educational cryptography project.
+
+The original "obelisk" permutation and cipher have NOT undergone independent
+cryptanalysis or peer review. Do not use the "obelisk" cipher to protect real
+data. For real use, select a vetted backend (chacha20, aes256gcm). See
+DESIGN.md, CRYPTANALYSIS.md and THREAT_MODEL.md for the full, honest status.
