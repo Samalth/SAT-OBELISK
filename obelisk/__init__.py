@@ -14,7 +14,7 @@ from .keyfile import (
     generate_keyfile, save_keyfile, load_keyfile, fingerprint, new_key, KeyfileError,
 )
 
-__version__ = "2.1.0"
+__version__ = "2.2.0"
 __all__ = [
     "permute", "permute_inv", "A_ROUNDS", "B_ROUNDS",
     "encrypt", "decrypt", "seal", "unseal", "TagMismatch",

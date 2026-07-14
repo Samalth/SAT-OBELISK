@@ -1,5 +1,5 @@
 #define AppName "SAT-Obelisk"
-#define AppVersion "2.1.0"
+#define AppVersion "2.2.0"
 #define AppPublisher "S.A. Thiers"
 #define AppExe "Obelisk.exe"
 
