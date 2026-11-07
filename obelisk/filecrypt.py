@@ -8,7 +8,7 @@ import tempfile
 
 from . import aead
 from . import ciphers
-from .hash import kdf
+from .hash import hash as _hash, kdf
 
 MAGIC = b"OBLKFILE"
 VERSION = 3
@@ -92,7 +92,7 @@ def _master_for_decrypt(flags, key, password, file_salt, iters):
 
 
 @contextlib.contextmanager
-def _atomic_write(path):
+def atomic_write(path):
     folder = os.path.dirname(os.path.abspath(path))
     fd, tmp = tempfile.mkstemp(dir=folder, suffix=".tmp")
     os.close(fd)
@@ -171,15 +171,20 @@ def _read_header(fin):
     return head, flags, cipher, iters, file_salt
 
 
-def encrypt_file(infile, outfile, key=None, password=None, iters=DEFAULT_PW_ITERS,
-                 cipher=ciphers.DEFAULT, progress=None):
+def _prepare_encryption(key, password, iters, cipher, extra_flags):
     c = ciphers.get_by_name(cipher) if isinstance(cipher, str) else cipher
     file_salt = os.urandom(SALT_BYTES)
     master, flags = _master_for_encrypt(key, password, file_salt, iters)
     subkey = _derive_subkey(master, file_salt, c.key_bytes)
-    header = _HEADER.pack(MAGIC, VERSION, flags, c.id, iters, file_salt)
+    header = _HEADER.pack(MAGIC, VERSION, flags | extra_flags, c.id, iters, file_salt)
+    return c, subkey, header
+
+
+def encrypt_file(infile, outfile, key=None, password=None, iters=DEFAULT_PW_ITERS,
+                 cipher=ciphers.DEFAULT, progress=None):
+    c, subkey, header = _prepare_encryption(key, password, iters, cipher, 0)
     total = os.path.getsize(infile)
-    with open(infile, "rb") as fin, _atomic_write(outfile) as fout:
+    with open(infile, "rb") as fin, atomic_write(outfile) as fout:
         _write_encrypted(fin, fout, c, subkey, header, progress, total)
 
 
@@ -187,12 +192,7 @@ def encrypt_folder(infolder, outfile, key=None, password=None, iters=DEFAULT_PW_
                    cipher=ciphers.DEFAULT, progress=None):
     if not os.path.isdir(infolder):
         raise ValueError("not a folder")
-    c = ciphers.get_by_name(cipher) if isinstance(cipher, str) else cipher
-    file_salt = os.urandom(SALT_BYTES)
-    master, flags = _master_for_encrypt(key, password, file_salt, iters)
-    flags |= FLAG_FOLDER
-    subkey = _derive_subkey(master, file_salt, c.key_bytes)
-    header = _HEADER.pack(MAGIC, VERSION, flags, c.id, iters, file_salt)
+    c, subkey, header = _prepare_encryption(key, password, iters, cipher, FLAG_FOLDER)
     arcname = os.path.basename(os.path.normpath(infolder)) or "folder"
     fd, tmp = tempfile.mkstemp(suffix=".tar")
     os.close(fd)
@@ -200,7 +200,7 @@ def encrypt_folder(infolder, outfile, key=None, password=None, iters=DEFAULT_PW_
         with tarfile.open(tmp, "w") as tar:
             tar.add(infolder, arcname=arcname)
         total = os.path.getsize(tmp)
-        with open(tmp, "rb") as fin, _atomic_write(outfile) as fout:
+        with open(tmp, "rb") as fin, atomic_write(outfile) as fout:
             _write_encrypted(fin, fout, c, subkey, header, progress, total)
     finally:
         os.path.exists(tmp) and os.remove(tmp)
@@ -214,6 +214,12 @@ def encrypt_path(src, dst, key=None, password=None, iters=DEFAULT_PW_ITERS,
     else:
         encrypt_file(src, dst, key=key, password=password, iters=iters,
                      cipher=cipher, progress=progress)
+
+
+def file_id(infile):
+    with open(infile, "rb") as fin:
+        head, _, _, _, _ = _read_header(fin)
+    return _hash(b"OBELISK-fileid\x00" + head, 16).hex()
 
 
 def is_folder_archive(infile):
@@ -251,5 +257,5 @@ def decrypt_file(infile, outfile, key=None, password=None, progress=None):
             finally:
                 os.path.exists(tmp) and os.remove(tmp)
         else:
-            with _atomic_write(outfile) as fout:
+            with atomic_write(outfile) as fout:
                 _decrypt_to(fin, fout, cipher, subkey, header, progress, total)

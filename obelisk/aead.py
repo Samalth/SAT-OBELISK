@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import os
 
-from .permutation import permute, MASK64, A_ROUNDS, B_ROUNDS
+from .permutation import permute, A_ROUNDS, B_ROUNDS
+from .sponge import RATE, lanes, rate_bytes, xor_rate, set_rate, pad, absorb
 
-RATE = 16
 KEY_BYTES = 16
 NONCE_BYTES = 16
 TAG_BYTES = 16
@@ -16,28 +16,10 @@ class TagMismatch(Exception):
     pass
 
 
-def _lanes(b16):
-    return int.from_bytes(b16[:8], "little"), int.from_bytes(b16[8:16], "little")
-
-
-def _rate_bytes(s):
-    return s[0].to_bytes(8, "little") + s[1].to_bytes(8, "little")
-
-
-def _xor_rate(s, b16):
-    s[0] ^= int.from_bytes(b16[:8], "little")
-    s[1] ^= int.from_bytes(b16[8:16], "little")
-
-
-def _set_rate(s, b16):
-    s[0] = int.from_bytes(b16[:8], "little")
-    s[1] = int.from_bytes(b16[8:16], "little")
-
-
 def _init(key, nonce):
-    k0, k1 = _lanes(key)
-    n0, n1 = _lanes(nonce)
-    iv0, iv1 = _lanes(_IV)
+    k0, k1 = lanes(key)
+    n0, n1 = lanes(nonce)
+    iv0, iv1 = lanes(_IV)
     s = [iv0, iv1, k0, k1, n0, n1]
     s = permute(s, A_ROUNDS)
     s[4] ^= k0
@@ -46,22 +28,13 @@ def _init(key, nonce):
 
 
 def _absorb_ad(s, ad):
-    if not ad:
-        s[5] ^= 1
-        return
-    full = len(ad) // RATE
-    for i in range(full):
-        _xor_rate(s, ad[i * RATE:(i + 1) * RATE])
-        s[:] = permute(s, B_ROUNDS)
-    rem = ad[full * RATE:]
-    block = rem + b"\x01" + b"\x00" * (RATE - len(rem) - 1)
-    _xor_rate(s, block)
-    s[:] = permute(s, B_ROUNDS)
+    if ad:
+        absorb(s, ad, B_ROUNDS)
     s[5] ^= 1
 
 
 def _finalize(s, key):
-    k0, k1 = _lanes(key)
+    k0, k1 = lanes(key)
     s[2] ^= k0
     s[3] ^= k1
     s = permute(s, A_ROUNDS)
@@ -77,13 +50,12 @@ def encrypt(key, nonce, plaintext, associated_data=b""):
     out = bytearray()
     full = len(plaintext) // RATE
     for i in range(full):
-        _xor_rate(s, plaintext[i * RATE:(i + 1) * RATE])
-        out += _rate_bytes(s)
+        xor_rate(s, plaintext[i * RATE:(i + 1) * RATE])
+        out += rate_bytes(s)
         s = permute(s, B_ROUNDS)
     rem = plaintext[full * RATE:]
-    block = rem + b"\x01" + b"\x00" * (RATE - len(rem) - 1)
-    _xor_rate(s, block)
-    out += _rate_bytes(s)[:len(rem)]
+    xor_rate(s, pad(rem))
+    out += rate_bytes(s)[:len(rem)]
 
     tag = _finalize(s, key)
     return bytes(out), tag
@@ -101,17 +73,17 @@ def decrypt(key, nonce, ciphertext, tag, associated_data=b""):
     full = len(ciphertext) // RATE
     for i in range(full):
         c = ciphertext[i * RATE:(i + 1) * RATE]
-        r = _rate_bytes(s)
+        r = rate_bytes(s)
         out += bytes(a ^ b for a, b in zip(r, c))
-        _set_rate(s, c)
+        set_rate(s, c)
         s = permute(s, B_ROUNDS)
     rem = ciphertext[full * RATE:]
-    r = _rate_bytes(s)
+    r = rate_bytes(s)
     out += bytes(a ^ b for a, b in zip(r[:len(rem)], rem))
     block = bytearray(r)
     block[:len(rem)] = rem
     block[len(rem)] ^= 0x01
-    _set_rate(s, bytes(block))
+    set_rate(s, bytes(block))
 
     expected = _finalize(s, key)
     if not _ct_eq(expected, tag):

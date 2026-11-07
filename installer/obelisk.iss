@@ -1,5 +1,7 @@
 #define AppName "SAT-Obelisk"
-#define AppVersion "2.2.0"
+#ifndef AppVersion
+  #error AppVersion is not set: build with build_installer.ps1 (passes /DAppVersion)
+#endif
 #define AppPublisher "S.A. Thiers"
 #define AppExe "Obelisk.exe"
 

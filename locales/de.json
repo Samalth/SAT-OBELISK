@@ -24,7 +24,6 @@
   "show_details": "Details anzeigen ▾",
   "hide_details": "Details ausblenden ▴",
   "details": "Details",
-  "language": "Sprache",
   "ready": "Bereit. Wählen Sie einen Vorgang, eine Eingabe und einen Schlüssel, und klicken Sie dann auf Ausführen.",
   "created_keyfile": "Schlüsseldatei erstellt (Fingerabdruck {fp})",
   "keyfile_saved_title": "Schlüsseldatei erstellt",

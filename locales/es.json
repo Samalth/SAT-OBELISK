@@ -24,7 +24,6 @@
   "show_details": "Mostrar detalles ▾",
   "hide_details": "Ocultar detalles ▴",
   "details": "Detalles",
-  "language": "Idioma",
   "ready": "Listo. Elija una operación, la entrada y la clave, luego presione Ejecutar.",
   "created_keyfile": "Archivo de clave creado (huella {fp})",
   "keyfile_saved_title": "Archivo de clave creado",

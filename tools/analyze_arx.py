@@ -6,7 +6,7 @@ import random
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from obelisk.permutation import (
-    arxbox, permute, bytes_to_state, state_to_bytes, A_ROUNDS, B_ROUNDS, MASK64,
+    arxbox, permute, bytes_to_state, state_to_bytes, A_ROUNDS, B_ROUNDS,
 )
 
 STATE_BITS = 384
@@ -36,7 +36,7 @@ def arxbox_differential(samples=40000):
     diffs = []
     for bit in range(64):
         diffs.append(((1 << bit, 0), f"a:bit{bit}"))
-        diffs.append((0, 1 << bit) if False else ((0, 1 << bit), f"b:bit{bit}"))
+        diffs.append(((0, 1 << bit), f"b:bit{bit}"))
     for _ in range(40):
         diffs.append(((rnd64() & rnd64(), rnd64() & rnd64()), "random-lowweight"))
     sampled = random.sample(diffs, 48)
@@ -48,7 +48,7 @@ def arxbox_differential(samples=40000):
             best_overall, best_desc = p, desc
     w = -math.log2(best_overall) if best_overall > 0 else float("inf")
     print(f"   best found: p={best_overall:.5f}  (weight {w:.1f} bits)  via {best_desc}")
-    print(f"   note: sampling finds a LOWER bound on the true max differential probability.\n")
+    print("   note: sampling finds a LOWER bound on the true max differential probability.\n")
     return best_overall
 
 

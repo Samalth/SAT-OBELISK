@@ -16,6 +16,8 @@ is meaningless, so this is deliberately precise and conservative.
 | File / folder contents | Confidentiality + integrity at rest |
 | File metadata bound in the header (cipher id, flags, salt) | Integrity (authenticated) |
 | Keys (raw key, keyfile, derived key) | Confidentiality |
+| Keyfile (v2) | Key wrapped with a password-derived key (Argon2id + AEAD); header fields authenticated |
+| Key database (`.obldb`) | Confidentiality + integrity: whole content sealed with a password-derived key (Argon2id + AEAD) |
 
 **Not an asset here:** the *existence*, *size*, *name*, and *modification time* of an encrypted
 file. These leak by design (see §4).
@@ -66,6 +68,24 @@ We do **not** defend against the adversaries in §5.
   tar is encrypted) but the *total* size is visible.
 - **Existence and timing** of encryption operations are not hidden.
 - **Which cipher/KDF** was used is stored in the cleartext header (authenticated, but visible).
+- **Keyfile header** (label, created date, fingerprint, cipher, KDF, salt) is readable without the
+  password. The fingerprint identifies a key but does not reveal it.
+- **Key database** header (cipher, KDF, salt) and file size are readable; everything else
+  (labels, fingerprints, paths, file associations, stored keyfiles) needs the database password.
+  The stored keyfiles are additionally protected by their own keyfile passwords. Anyone who can
+  read the `.obldb` can try to guess the database password offline (see NG2), and someone with
+  write access can delete or replace it (no protection against deletion or rollback).
+- **Changing a password** (keyfile or database) re-encrypts the current file only. Older copies
+  and backups still open with the old password, and the key inside a keyfile does not change, so
+  files encrypted with it stay decryptable. A leaked keyfile needs a new key, not a new password.
+- **Database lock file** (`<name>.obldb.lock`, present only while someone writes) shows the
+  writer's Windows user name and computer name in plain text to everyone with access to the share.
+  A lock counts as stuck after 30 seconds by its file time, which assumes the clocks of the
+  clients and the file server roughly agree. Anyone with write access can release a lock; the
+  writer then gets "lock released" and nothing is written.
+- **Remembered database logins** are stored in `config.json`, encrypted with Windows DPAPI. Anyone
+  (or any program) running as the same Windows user on that device can recover them; they do not
+  work when copied to another account or machine.
 
 If hiding size/existence matters, that is out of scope and needs padding/traffic-analysis defenses
 this tool does not provide.
@@ -88,7 +108,8 @@ this tool does not provide.
 - **NG5 — Side channels beyond the tag compare.** Cache/timing/power analysis of the pure-Python
   OBELISK permutation is not addressed (ARX is table-free, which helps, but Python gives no guarantee).
 - **NG6 — Key management lifecycle.** Key escrow, rotation, revocation, and secure backup of keyfiles
-  are the user's responsibility. Losing a keyfile = losing the data.
+  are the user's responsibility. Losing a keyfile or its password = losing the data. A stolen
+  keyfile is as strong as its password (offline guessing, see NG2).
 - **NG7 — Multi-user / access control.** No per-user keys, no authorization model.
 
 ---
@@ -96,7 +117,8 @@ this tool does not provide.
 ## 6. Operational guidance
 
 1. **For anything real, select a vetted cipher** (`chacha20` or `aes256gcm`) — or don't use this tool.
-2. **Prefer keyfiles over passwords.** Back them up securely; their loss is unrecoverable.
+2. **Prefer keyfiles over passwords.** Back them up securely; their loss is unrecoverable. Old
+   plaintext (v1) keyfiles still load; protect them with `obelisk protect-key`.
 3. **Never reuse a raw key + nonce manually** via the low-level API; the file format handles this
    correctly, the low-level `encrypt()` does not.
 4. **Treat the `.obl` header as public.** It authenticates but does not hide metadata.

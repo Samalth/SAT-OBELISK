@@ -8,26 +8,32 @@ from tkinter import ttk, filedialog, messagebox
 
 from . import aead
 from . import ciphers
+from . import gui_dialogs
+from . import registry
 from . import settings
 from . import __version__
-from .filecrypt import encrypt_path, decrypt_file, FileFormatError
+from .filecrypt import encrypt_path, decrypt_file, file_id, FileFormatError
+from .gui_database import DatabaseTab, load_contents
 from .keyfile import (
-    generate_keyfile, load_keyfile, new_key, fingerprint, KeyfileError,
+    generate_keyfile, load_keyfile, protect_keyfile, change_keyfile_password, read_keyfile_info,
+    parse_hex_key, new_key, fingerprint, KeyfileError, KeyfilePasswordRequired,
 )
 from .i18n import Translator, detect_language
+from .resources import resource_path
 
 PAD = 8
 COLORS = {"info": "#444", "success": "#1a7f37", "error": "#c0392b", "working": "#b8860b"}
 DEFAULT_GEOMETRY = "620x600"
 DETAILS_GEOMETRY = "620x760"
 DEFAULT_LANG = "nl"
+MAX_LISTED_DATABASES = 8
 
 
-def _resource(name, sub):
-    base = getattr(sys, "_MEIPASS", None)
-    if base:
-        return os.path.join(base, sub, name)
-    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), sub, name)
+def _find_keyfile(unlocked, src):
+    try:
+        return registry.find_keyfile(unlocked, file_id(src))
+    except (FileFormatError, OSError):
+        return None
 
 
 class ObeliskApp(tk.Tk):
@@ -47,6 +53,11 @@ class ObeliskApp(tk.Tk):
         self.infile = tk.StringVar()
         self.outfile = tk.StringVar()
         self.keyfile_path = tk.StringVar()
+        self.unlocked = {}
+        self.db_state = {}
+        self.db_locks = {}
+        self.known_keyfiles = []
+        self.db_lock = threading.Lock()
         self.hexkey = tk.StringVar()
         self.password = tk.StringVar()
         self.show_pw = tk.BooleanVar(value=False)
@@ -62,11 +73,12 @@ class ObeliskApp(tk.Tk):
             self._prefill(initial_path)
         else:
             self._status(self.tr.t("ready"), "info")
+        self.after(200, self._unlock_databases)
 
     def _set_icon(self):
         for setter, name in ((self.iconbitmap, "icon.ico"), (None, "icon.png")):
             try:
-                path = _resource(name, "assets")
+                path = resource_path("assets", name)
                 if not os.path.exists(path):
                     continue
                 if name.endswith(".ico"):
@@ -89,14 +101,21 @@ class ObeliskApp(tk.Tk):
         ttk.Label(head, text="OBELISK", font=("Segoe UI", 18, "bold")).pack(anchor="w")
         ttk.Label(head, text=self.t("subtitle"), foreground="#666").pack(anchor="w")
 
-        mode = ttk.LabelFrame(root, text=self.t("operation"), padding=PAD)
-        mode.pack(fill="x", pady=(PAD, 0))
+        self.tabs = ttk.Notebook(root)
+        self.tabs.pack(fill="x", pady=(PAD, 0))
+        main = ttk.Frame(self.tabs, padding=PAD)
+        self.db_tab = DatabaseTab(self.tabs, self, PAD)
+        self.tabs.add(main, text=self.t("tab_crypt"))
+        self.tabs.add(self.db_tab, text=self.t("tab_database"))
+
+        mode = ttk.LabelFrame(main, text=self.t("operation"), padding=PAD)
+        mode.pack(fill="x")
         ttk.Radiobutton(mode, text=self.t("encrypt"), value="encrypt", variable=self.mode,
                         command=self._suggest_out).pack(side="left", padx=PAD)
         ttk.Radiobutton(mode, text=self.t("decrypt"), value="decrypt", variable=self.mode,
                         command=self._suggest_out).pack(side="left", padx=PAD)
 
-        files = ttk.LabelFrame(root, text=self.t("files"), padding=PAD)
+        files = ttk.LabelFrame(main, text=self.t("files"), padding=PAD)
         files.pack(fill="x", pady=PAD)
         r = ttk.Frame(files); r.pack(fill="x", pady=2)
         ttk.Label(r, text=self.t("input"), width=8).pack(side="left")
@@ -108,7 +127,7 @@ class ObeliskApp(tk.Tk):
         ttk.Entry(r2, textvariable=self.outfile).pack(side="left", fill="x", expand=True, padx=PAD)
         ttk.Button(r2, text=self.t("browse"), command=self._pick_out).pack(side="left")
 
-        cf = ttk.LabelFrame(root, text=self.t("cipher"), padding=PAD)
+        cf = ttk.LabelFrame(main, text=self.t("cipher"), padding=PAD)
         cf.pack(fill="x", pady=(0, PAD))
         cc = ttk.Combobox(cf, values=ciphers.names(), textvariable=self.cipher,
                           state="readonly", width=14)
@@ -116,7 +135,7 @@ class ObeliskApp(tk.Tk):
         cc.pack(side="left")
         ttk.Label(cf, text=self.t("cipher_hint"), foreground="#666").pack(side="left", padx=PAD)
 
-        key = ttk.LabelFrame(root, text=self.t("key"), padding=PAD)
+        key = ttk.LabelFrame(main, text=self.t("key"), padding=PAD)
         key.pack(fill="x", pady=(0, PAD))
         row = ttk.Frame(key); row.pack(fill="x")
         for label, val in (("keyfile", "keyfile"), ("hexkey", "hex"), ("password", "password")):
@@ -125,7 +144,7 @@ class ObeliskApp(tk.Tk):
         self.key_area = ttk.Frame(key)
         self.key_area.pack(fill="x", pady=(PAD, 0))
 
-        run = ttk.Frame(root); run.pack(fill="x", pady=PAD)
+        run = ttk.Frame(main); run.pack(fill="x", pady=(PAD, 0))
         self.run_btn = ttk.Button(run, text=self.t("run"), command=self._run)
         self.run_btn.pack(side="right")
         self.progress = ttk.Progressbar(run, variable=self.progress_var, maximum=100)
@@ -172,10 +191,13 @@ class ObeliskApp(tk.Tk):
         src = self.keysrc.get()
         if src == "keyfile":
             r = ttk.Frame(self.key_area); r.pack(fill="x")
-            ttk.Entry(r, textvariable=self.keyfile_path).pack(
-                side="left", fill="x", expand=True, padx=(0, PAD))
+            known = ttk.Combobox(r, textvariable=self.keyfile_path)
+            known.configure(postcommand=lambda: known.configure(values=self.known_keyfiles))
+            known.pack(side="left", fill="x", expand=True, padx=(0, PAD))
             ttk.Button(r, text=self.t("browse"), command=self._pick_keyfile).pack(side="left")
             ttk.Button(r, text=self.t("new_btn"), command=self._new_keyfile).pack(side="left", padx=(PAD, 0))
+            ttk.Button(r, text=self.t("password_btn"),
+                       command=self._change_keyfile_password).pack(side="left", padx=(PAD, 0))
         elif src == "hex":
             r = ttk.Frame(self.key_area); r.pack(fill="x")
             ttk.Entry(r, textvariable=self.hexkey).pack(
@@ -224,6 +246,171 @@ class ObeliskApp(tk.Tk):
             self.outfile.set(os.path.normpath(src) + ".obl")
         else:
             self.outfile.set(src[:-4] if src.endswith(".obl") else src + ".out")
+            self._suggest_key(src)
+
+    def run_in_background(self, work, done):
+        def runner():
+            result = work()
+            self.after(0, lambda: done(result))
+        threading.Thread(target=runner, daemon=True).start()
+
+    def write_databases(self, work, done):
+        unlocked = dict(self.unlocked)
+        active = settings.active_database()
+
+        def locked_work():
+            with self.db_lock:
+                try:
+                    return work(unlocked, active), None
+                except (registry.RegistryError, KeyfileError, FileFormatError, OSError) as e:
+                    return None, e
+        self.run_in_background(locked_work,
+                               lambda outcome: self._write_finished(outcome, work, done))
+
+    def _write_finished(self, outcome, work, done):
+        error = outcome[1]
+        if isinstance(error, registry.LockReleased):
+            if gui_dialogs.ask_choice(
+                    self, self.t("lock_released_title"),
+                    self.t("lock_released_msg", name=os.path.basename(error.path)),
+                    self.t("merge_btn")):
+                self.write_databases(work, done)
+                return
+        elif isinstance(error, registry.DatabaseBusy):
+            if gui_dialogs.ask_choice(
+                    self, self.t("db_busy_title"),
+                    self.t("db_busy_msg", name=os.path.basename(error.path),
+                           owner=error.status["owner"], since=error.status["since_text"]),
+                    self.t("release_lock_btn")):
+                registry.release_lock(error.path)
+                self.write_databases(work, done)
+                return
+        elif isinstance(error, registry.WrongPassword):
+            self._log(self.t("registry_warning", err=error))
+            self.unlocked.pop(error.path, None)
+            self.db_state[error.path] = "locked"
+            self.login_database(error.path, str(error),
+                                then=lambda: self.write_databases(work, done))
+            return
+        done(outcome)
+
+    def _suggest_key(self, src):
+        if not self.unlocked:
+            return
+        unlocked = dict(self.unlocked)
+        self.run_in_background(lambda: _find_keyfile(unlocked, src),
+                               lambda keyfile: self._key_suggested(src, keyfile))
+
+    def _key_suggested(self, src, keyfile):
+        if not keyfile or src != self.infile.get() or keyfile == self.keyfile_path.get():
+            return
+        self.keysrc.set("keyfile")
+        self.keyfile_path.set(keyfile)
+        self._refresh_key()
+        self._log(self.t("registry_key_found", path=keyfile))
+
+    def _register_keyfile(self, path):
+        self.write_databases(
+            lambda unlocked, active: registry.record_keyfile(unlocked, active, path),
+            self._databases_written)
+
+    def _record_use(self, op, outfile, cipher, keyfile, fp):
+        if not self.unlocked:
+            return
+
+        def work(unlocked, active):
+            if keyfile:
+                registry.record_keyfile(unlocked, active, keyfile)
+            if op == "encrypt":
+                registry.record_file(unlocked, active, file_id(outfile), fp, outfile, cipher)
+            return True
+        self.write_databases(work, self._databases_written)
+
+    def _databases_written(self, outcome):
+        written, error = outcome
+        if error is not None:
+            self._log(self.t("registry_warning", err=error))
+        elif written:
+            self.databases_changed()
+
+    def _unlock_databases(self):
+        self.scan_databases(settings.databases(), ask_login=True)
+
+    def scan_databases(self, paths, ask_login):
+        for path in paths:
+            if path not in self.unlocked:
+                self.db_state[path] = "checking"
+        self.db_tab.refresh()
+        if paths:
+            self.run_in_background(lambda: settings.scan_databases(paths),
+                                   lambda result: self._databases_scanned(result, ask_login))
+
+    def _databases_scanned(self, result, ask_login):
+        states, unlocked, locks = result
+        self.unlocked.update(unlocked)
+        self.db_locks.update(locks)
+        locked = []
+        for path, state in states.items():
+            if path in self.unlocked:
+                state = "unlocked"
+            self.db_state[path] = state
+            if state == "locked":
+                locked.append(path)
+        self.databases_changed()
+        if not ask_login:
+            return
+        if len(locked) == 1:
+            self.login_database(locked[0])
+        elif locked:
+            names = []
+            for path in locked[:MAX_LISTED_DATABASES]:
+                names.append(os.path.basename(path))
+            if len(locked) > MAX_LISTED_DATABASES:
+                names.append(self.t("db_and_more", n=len(locked) - MAX_LISTED_DATABASES))
+            if messagebox.askyesno(self.t("db_locked_title"),
+                                   self.t("db_locked_many", names="\n".join(names))):
+                self.tabs.select(self.db_tab)
+
+    def login_database(self, path, error="", then=None):
+        name = os.path.basename(path)
+        answer = gui_dialogs.ask_password(self, self.t("db_login_title"),
+                                          self.t("pw_for", name=name),
+                                          remember=True, error=error)
+        if answer is None:
+            return
+        password, remember = answer
+        self._status(self.t("db_checking", name=name), "working")
+        self.run_in_background(
+            lambda: load_contents(path, password)[1],
+            lambda error: self._login_checked(path, password, remember, error, then))
+
+    def _login_checked(self, path, password, remember, error, then):
+        if isinstance(error, registry.RegistryError):
+            self.login_database(path, str(error), then)
+            return
+        if error is not None:
+            self._status(self.t("registry_error", err=error), "error")
+            return
+        self.unlocked[path] = password
+        self.db_state[path] = "unlocked"
+        if remember:
+            settings.remember_login(path, password)
+        self._status(self.t("db_logged_in", name=os.path.basename(path)), "success")
+        self.databases_changed()
+        if then is not None:
+            then()
+
+    def databases_changed(self):
+        self.db_tab.refresh()
+        unlocked = dict(self.unlocked)
+        self.run_in_background(lambda: registry.known_keyfiles(unlocked),
+                               lambda paths: setattr(self, "known_keyfiles", paths))
+        if self.mode.get() == "decrypt" and self.infile.get():
+            self._suggest_key(self.infile.get())
+
+    def ask_new_password(self, title, prompt):
+        answer = gui_dialogs.ask_password(self, title, prompt, confirm=True)
+        return answer[0] if answer else None
 
     def _prefill(self, path):
         self.infile.set(path)
@@ -235,13 +422,27 @@ class ObeliskApp(tk.Tk):
         path = filedialog.askopenfilename(
             title=self.t("dlg_select_keyfile"),
             filetypes=[("OBELISK keyfile", "*.key"), ("All", "*.*")])
-        if path:
-            self.keyfile_path.set(path)
-            try:
-                k = load_keyfile(path)
-                self._log(self.t("loaded_keyfile", fp=fingerprint(k)))
-            except (KeyfileError, OSError) as e:
-                self._status(self.t("keyfile_error", err=e), "error")
+        if not path:
+            return
+        path = os.path.normpath(path)
+        self.keyfile_path.set(path)
+        try:
+            info = read_keyfile_info(path)
+        except (KeyfileError, OSError) as e:
+            self._status(self.t("keyfile_error", err=e), "error")
+            return
+        self._log(self.t("loaded_keyfile", fp=info["fingerprint"]))
+        if not info["protected"] and messagebox.askyesno(self.t("unprotected_title"),
+                                                         self.t("unprotected_msg")):
+            password = self.ask_new_password(self.t("keyfile_pw_title"), self.t("keyfile_pw_new"))
+            if password:
+                try:
+                    protect_keyfile(path, password)
+                except (KeyfileError, OSError) as e:
+                    self._status(self.t("keyfile_error", err=e), "error")
+                    return
+                self._status(self.t("protected_keyfile", fp=info["fingerprint"]), "success")
+        self._register_keyfile(path)
 
     def _new_keyfile(self):
         path = filedialog.asksaveasfilename(title=self.t("dlg_create_keyfile"),
@@ -249,15 +450,51 @@ class ObeliskApp(tk.Tk):
                                             filetypes=[("OBELISK keyfile", "*.key")])
         if not path:
             return
+        path = os.path.normpath(path)
+        password = self.ask_new_password(self.t("keyfile_pw_title"), self.t("keyfile_pw_new"))
+        if not password:
+            return
         try:
-            _, fp = generate_keyfile(path, label=os.path.basename(path))
-        except OSError as e:
+            _, fp = generate_keyfile(path, password, label=os.path.basename(path))
+        except (KeyfileError, OSError) as e:
             self._status(self.t("failed", err=e), "error")
             return
+        self._register_keyfile(path)
         self.keyfile_path.set(path)
         self._status(self.t("created_keyfile", fp=fp), "success")
         messagebox.showinfo(self.t("keyfile_saved_title"),
                             self.t("keyfile_saved_msg", path=path, fp=fp))
+
+    def _change_keyfile_password(self):
+        path = self.keyfile_path.get().strip()
+        if not path:
+            self._status(self.t("choose_keyfile"), "error")
+            return
+        try:
+            protected = read_keyfile_info(path)["protected"]
+        except (KeyfileError, OSError) as e:
+            self._status(self.t("keyfile_error", err=e), "error")
+            return
+        old_password = None
+        if protected:
+            answer = gui_dialogs.ask_password(
+                self, self.t("keyfile_pw_title"),
+                self.t("pw_current_for", name=os.path.basename(path)))
+            if answer is None:
+                return
+            old_password = answer[0]
+        new_password = self.ask_new_password(self.t("keyfile_pw_title"), self.t("keyfile_pw_new"))
+        if not new_password:
+            return
+        try:
+            fp = change_keyfile_password(path, old_password, new_password)
+        except (KeyfileError, OSError) as e:
+            self._status(self.t("keyfile_error", err=e), "error")
+            return
+        self._status(self.t("keyfile_pw_changed", fp=fp), "success")
+        self.write_databases(
+            lambda unlocked, active: registry.update_stored_keyfile(unlocked, path),
+            self._databases_written)
 
     def _gen_hex(self):
         k = new_key()
@@ -266,9 +503,7 @@ class ObeliskApp(tk.Tk):
 
     def _show_fp(self):
         try:
-            k = bytes.fromhex(self.hexkey.get().strip())
-            if len(k) != aead.KEY_BYTES:
-                raise ValueError
+            k = parse_hex_key(self.hexkey.get())
         except ValueError:
             self._status(self.t("enter_valid_key"), "error")
             return
@@ -280,12 +515,21 @@ class ObeliskApp(tk.Tk):
             p = self.keyfile_path.get().strip()
             if not p:
                 raise ValueError(self.t("choose_keyfile"))
-            return load_keyfile(p), None
+            try:
+                key = load_keyfile(p)
+            except KeyfilePasswordRequired:
+                answer = gui_dialogs.ask_password(
+                    self, self.t("keyfile_pw_title"),
+                    self.t("pw_for", name=os.path.basename(p)))
+                if answer is None:
+                    raise ValueError(self.t("keyfile_pw_cancelled"))
+                key = load_keyfile(p, answer[0])
+            return key, None
         if src == "hex":
-            k = bytes.fromhex(self.hexkey.get().strip())
-            if len(k) != aead.KEY_BYTES:
+            try:
+                return parse_hex_key(self.hexkey.get()), None
+            except ValueError:
                 raise ValueError(self.t("key_len_err", n=aead.KEY_BYTES * 2))
-            return k, None
         pw = self.password.get()
         if not pw:
             raise ValueError(self.t("enter_password"))
@@ -304,6 +548,7 @@ class ObeliskApp(tk.Tk):
             key, password = self._resolve_key()
         except (ValueError, KeyfileError, OSError) as e:
             self._status(self.t("key_error", err=e), "error"); return
+        keyfile = self.keyfile_path.get().strip() if self.keysrc.get() == "keyfile" else None
         self.run_btn.configure(state="disabled")
         op = self.mode.get()
         self._status(self.t("encrypting" if op == "encrypt" else "decrypting"), "working")
@@ -312,7 +557,7 @@ class ObeliskApp(tk.Tk):
         self._running = True
         self.after(80, self._poll_progress)
         threading.Thread(target=self._work,
-                         args=(op, infile, outfile, key, password, self.cipher.get()),
+                         args=(op, infile, outfile, key, password, self.cipher.get(), keyfile),
                          daemon=True).start()
 
     def _set_prog(self, done, total):
@@ -325,7 +570,7 @@ class ObeliskApp(tk.Tk):
         if self._running:
             self.after(80, self._poll_progress)
 
-    def _work(self, op, infile, outfile, key, password, cipher):
+    def _work(self, op, infile, outfile, key, password, cipher, keyfile):
         try:
             if op == "encrypt":
                 encrypt_path(infile, outfile, key=key, password=password,
@@ -333,11 +578,15 @@ class ObeliskApp(tk.Tk):
                 tkey = "encrypted_folder" if os.path.isdir(infile) else "encrypted_file"
                 msg = self.t(tkey, cipher=cipher, path=outfile)
                 if key is not None:
-                    self.after(0, lambda: self._log(self.t("key_fp", fp=fingerprint(key))))
+                    fp = fingerprint(key)
+                    self.after(0, lambda: self._log(self.t("key_fp", fp=fp)))
             else:
                 decrypt_file(infile, outfile, key=key, password=password, progress=self._set_prog)
                 msg = self.t("decrypted", path=outfile)
             self.after(0, lambda: self._done(msg, "success"))
+            if key is not None:
+                self.after(0, lambda: self._record_use(op, outfile, cipher, keyfile,
+                                                       fingerprint(key)))
         except ciphers.CipherUnavailable as e:
             self.after(0, lambda e=e: self._done(self.t("failed", err=e), "error"))
         except aead.TagMismatch:

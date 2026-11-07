@@ -16,11 +16,48 @@ experimental, not just the permutation.
 ### Command line
 
 ```
-python -m obelisk genkey --out my.key --label "laptop"   # create a keyfile
+python -m obelisk genkey --out my.key --label "laptop"   # create a password-protected keyfile
 python -m obelisk fingerprint --keyfile my.key           # show key fingerprint
 python -m obelisk encrypt in.dat out.obl --keyfile my.key
-python -m obelisk decrypt out.obl back.dat --keyfile my.key
+python -m obelisk decrypt out.obl back.dat               # keyfile is looked up in the key database
+python -m obelisk protect-key old.key                    # add a password to an old plaintext keyfile
 ```
+
+Keyfiles are encrypted with a password you pick (Argon2id + the default cipher), so the key
+can't be read with a text or hex editor. Lose the keyfile or its password and the data is gone.
+
+Optionally, link one or more key databases (`.obldb`). A database records the keyfiles you
+create or use, and which key encrypted which file, so decryption can find the right keyfile. It
+also stores a copy of each (password-protected) keyfile, so a lost `.key` can be restored. Each
+database is encrypted with its own password; you can let the app remember that login on this
+device (Windows only, protected with your Windows account). Without a database the app works as
+before.
+
+New keys are written to the *active* database; a file is recorded in the database that holds
+its key.
+
+```
+python -m obelisk database --new \\server\share\team.obldb --remember   # create + link
+python -m obelisk database --open \\server\share\team.obldb             # link an existing one
+python -m obelisk database --login \\server\share\team.obldb --remember # remember the login
+python -m obelisk database                                              # list linked databases
+python -m obelisk database --show \\server\share\team.obldb             # list its keys and files
+python -m obelisk database --restore <fingerprint> --out my.key
+python -m obelisk database --change-password \\server\share\team.obldb
+python -m obelisk database --remove-key <fingerprint>                   # also drops its file records
+python -m obelisk database --remove-file out.obl                        # by .obl path or file id
+python -m obelisk change-password my.key                                # keyfile password
+python -m obelisk database --release-lock \\server\share\team.obldb     # remove a stuck lock
+```
+
+While a database is being written, a `team.obldb.lock` file next to it holds the lock (who and
+since when), so two people never overwrite each other's changes. A lock older than 30 seconds
+counts as stuck and is cleared automatically; it can also be released by hand. If your lock is
+released while you are saving, nothing is written and the app offers to merge your change into
+the latest version.
+
+In the GUI the same lives on the **Database** tab. At start-up the app logs in silently where a
+login is remembered; one locked database gets a login popup, several get a single notice.
 
 Other key sources:
 

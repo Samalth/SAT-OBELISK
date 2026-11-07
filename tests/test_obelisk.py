@@ -127,16 +127,43 @@ def test_keywrap():
     print("ok  key-wrap round-trip + context binding + tamper detection")
 
 
-def test_known_answer_stability():
+AEAD_VECTORS = [
+    (b"OBELISK known-answer test vector", b"kat",
+     "3b554cb8c54bcb2b1d091e248736481305ce979343fe1c0ff265dbbc53228e69",
+     "418cf211625e39be97c5328168e04c02"),
+    (b"", b"", "", "d85b901bfad8c19211068b2e3070ffa0"),
+    (bytes(range(37)), bytes(range(100, 140)),
+     "05c269ded55010a58786f4a7fdf56aefbba3d9dbb394b98aaae08d6cfa27e25957280d8d80",
+     "08ad1225742e32118a0de0c2835eb4c7"),
+]
+HASH_VECTORS = [
+    (b"", "1e4143092bfddbc8d8448bc90980da8b9f841de947834f69a55f8932496d2018"
+          "74efc2a50a4647db1b5a7c3293c55001e75e"),
+    (b"OBELISK known-answer test vector",
+     "ec580fd956820892d2fee0cb4a024494dec353cd05371368ca04b0abeb69e026"
+     "b2c151952fe67a0b5c1414ea8c78f43fca58"),
+    (bytes(range(100)), "86ff79ab89ea06b7e2137f7b747208bf76a4335da2aa3deec4857e7eca2ba350"
+                        "3c7dc5042de164abd2b7bccebfed0e2b78b8"),
+]
+KDF_VECTOR = "11c04eb3481afd08ed223c8ad6bf10118a98791ae51f59fbccf6c26bebd729211af8f2482cf08955"
+WRAP_VECTOR = ("c4eb44d1503a6c6e10bdb838d391faa5f8b3f3f915bb5d2a"
+               "da11614065072ec65bed36600953da267729084efe952efb")
+
+
+def test_known_answer_vectors():
     key = bytes(range(16))
     nonce = bytes(range(16, 32))
-    pt = b"OBELISK known-answer test vector"
-    ct, tag = encrypt(key, nonce, pt, b"kat")
-    print(f"    KAT ct  = {ct.hex()}")
-    print(f"    KAT tag = {tag.hex()}")
-    print(f"    KAT hash= {hash(pt).hex()}")
-    assert decrypt(key, nonce, ct, tag, b"kat") == pt
-    print("ok  known-answer vectors stable and self-consistent")
+    for pt, ad, ct_hex, tag_hex in AEAD_VECTORS:
+        ct, tag = encrypt(key, nonce, pt, ad)
+        assert (ct.hex(), tag.hex()) == (ct_hex, tag_hex), (pt, ad)
+        assert decrypt(key, nonce, ct, tag, ad) == pt
+    for data, digest_hex in HASH_VECTORS:
+        assert hash(data, 50).hex() == digest_hex, data
+        assert hash(data).hex() == digest_hex[:64], data
+    assert kdf(b"master-secret", 40, salt=b"salt", info=b"info").hex() == KDF_VECTOR
+    assert unwrap(bytes(range(32)), bytes.fromhex(WRAP_VECTOR),
+                  context=b"device-42") == bytes(range(200, 216))
+    print("ok  pinned known-answer vectors: AEAD (incl. multi-block AD/empty), hash, KDF, key-wrap")
 
 
 if __name__ == "__main__":

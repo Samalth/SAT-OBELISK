@@ -4,6 +4,8 @@ import json
 import os
 import sys
 
+from .resources import resource_path
+
 LANG_NAMES = {
     "en": "English",
     "nl": "Nederlands",
@@ -17,15 +19,8 @@ LANG_NAMES = {
 }
 
 
-def _locales_dir():
-    base = getattr(sys, "_MEIPASS", None)
-    if base:
-        return os.path.join(base, "locales")
-    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "locales")
-
-
 def _load(lang):
-    path = os.path.join(_locales_dir(), lang + ".json")
+    path = resource_path("locales", lang + ".json")
     try:
         with open(path, encoding="utf-8") as f:
             return json.load(f)
@@ -60,7 +55,7 @@ def detect_language(default="en"):
     """Pick the startup language: installer choice if a matching locale exists,
     otherwise the given default."""
     lang = _registry_language()
-    if lang and os.path.exists(os.path.join(_locales_dir(), lang + ".json")):
+    if lang and os.path.exists(resource_path("locales", lang + ".json")):
         return lang
     return default
 
@@ -71,7 +66,7 @@ class Translator:
         self.set(lang)
 
     def available(self):
-        d = _locales_dir()
+        d = resource_path("locales")
         langs = []
         if os.path.isdir(d):
             langs = sorted(f[:-5] for f in os.listdir(d) if f.endswith(".json"))

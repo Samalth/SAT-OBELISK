@@ -24,7 +24,6 @@
   "show_details": "Mostra dettagli ▾",
   "hide_details": "Nascondi dettagli ▴",
   "details": "Dettagli",
-  "language": "Lingua",
   "ready": "Pronto. Scegli un'operazione, ingresso e chiave, poi premi Esegui.",
   "created_keyfile": "File chiave creato (impronta {fp})",
   "keyfile_saved_title": "File chiave creato",

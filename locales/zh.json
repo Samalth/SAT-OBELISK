@@ -24,7 +24,6 @@
   "show_details": "显示详情 ▾",
   "hide_details": "隐藏详情 ▴",
   "details": "详情",
-  "language": "语言",
   "ready": "就绪。请选择操作、输入和密钥，然后点击运行。",
   "created_keyfile": "已创建密钥文件（指纹 {fp}）",
   "keyfile_saved_title": "密钥文件已创建",

@@ -24,7 +24,6 @@
   "show_details": "Afficher les détails ▾",
   "hide_details": "Masquer les détails ▴",
   "details": "Détails",
-  "language": "Langue",
   "ready": "Prêt. Choisissez une opération, une entrée et une clé, puis appuyez sur Exécuter.",
   "created_keyfile": "Fichier de clé créé (empreinte {fp})",
   "keyfile_saved_title": "Fichier de clé créé",
